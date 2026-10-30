@@ -1,0 +1,167 @@
+﻿"use client";
+
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { demoCategories, demoProducts, formatPrice, type Category, type Product } from "@/lib/menu";
+import { Plus, Pencil, Trash2, LogOut, Coffee, Save, X, ImagePlus, RefreshCw } from "lucide-react";
+
+type ProductForm = { id?: string; name: string; description: string; price: string; category_id: string; image_url: string; available: boolean; featured: boolean; sort_order: string };
+const blankForm = (categoryId = ""): ProductForm => ({ name: "", description: "", price: "", category_id: categoryId, image_url: "", available: true, featured: false, sort_order: "0" });
+
+export default function AdminPage() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [signedIn, setSignedIn] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [categories, setCategories] = useState<Category[]>(demoCategories);
+  const [products, setProducts] = useState<Product[]>(demoProducts);
+  const [form, setForm] = useState<ProductForm | null>(null);
+  const [categoryName, setCategoryName] = useState("");
+  const [showCategoryForm, setShowCategoryForm] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    async function init() {
+      if (!supabase) { setLoading(false); return; }
+      const { data } = await supabase.auth.getSession();
+      if (mounted && data.session) {
+        setSignedIn(true);
+        await loadData();
+      }
+      if (mounted) setLoading(false);
+    }
+    void init();
+    if (!supabase) return;
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSignedIn(Boolean(session));
+      if (session) void loadData();
+    });
+    return () => { mounted = false; listener.subscription.unsubscribe(); };
+  }, []);
+
+  async function loadData() {
+    if (!supabase) return;
+    setBusy(true); setNotice("");
+    const [cats, prods] = await Promise.all([
+      supabase.from("categories").select("id,name,sort_order").order("sort_order"),
+      supabase.from("products").select("id,category_id,name,description,price,image_url,available,featured,sort_order").order("sort_order")
+    ]);
+    if (cats.error || prods.error) setNotice(`طھط¹ط°ظ‘ط± طھط­ظ…ظٹظ„ ط§ظ„ط¨ظٹط§ظ†ط§طھ: ${cats.error?.message || prods.error?.message}`);
+    else {
+      setCategories((cats.data || []) as Category[]);
+      setProducts((prods.data || []) as Product[]);
+    }
+    setBusy(false);
+  }
+
+  async function login(e: React.FormEvent) {
+    e.preventDefault();
+    if (!supabase) return;
+    setBusy(true); setNotice("");
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) setNotice("طھط¹ط°ظ‘ط± طھط³ط¬ظٹظ„ ط§ظ„ط¯ط®ظˆظ„: طھط£ظƒط¯ ظ…ظ† ط§ظ„ط¨ط±ظٹط¯ ظˆظƒظ„ظ…ط© ط§ظ„ظ…ط±ظˆط± ظˆظ…ظ† ط¥ط¹ط¯ط§ط¯ط§طھ Supabase.");
+    else { setSignedIn(true); await loadData(); }
+    setBusy(false);
+  }
+
+  async function logout() {
+    if (!supabase) return;
+    await supabase.auth.signOut(); setSignedIn(false);
+  }
+
+  async function saveProduct(e: React.FormEvent) {
+    e.preventDefault();
+    if (!supabase || !form) return;
+    const price = Number(form.price);
+    if (!form.name.trim() || !Number.isFinite(price) || price < 0 || !form.category_id) {
+      setNotice("ط£ط¯ط®ظ„ ط§ط³ظ… ط§ظ„طµظ†ظپ ظˆط§ظ„ط³ط¹ط± ط§ظ„طµط­ظٹط­ ظˆط§ط®طھط± ط§ظ„ظ‚ط³ظ…."); return;
+    }
+    setBusy(true); setNotice("");
+    const payload = {
+      name: form.name.trim(), description: form.description.trim(), price,
+      category_id: form.category_id, image_url: form.image_url.trim(),
+      available: form.available, featured: form.featured ?? false, sort_order: Number(form.sort_order) || 0
+    };
+    const result = form.id
+      ? await supabase.from("products").update(payload).eq("id", form.id)
+      : await supabase.from("products").insert(payload);
+    if (result.error) setNotice(`ظ„ظ… ظٹطھظ… ط­ظپط¸ ط§ظ„طµظ†ظپ: ${result.error.message}`);
+    else { setForm(null); setNotice("طھظ… ط­ظپط¸ ط§ظ„طµظ†ظپ."); await loadData(); }
+    setBusy(false);
+  }
+
+  async function deleteProduct(id: string) {
+    if (!supabase || !window.confirm("ظ…طھط£ظƒط¯ ط£ظ†ظƒ طھط±ظٹط¯ ط­ط°ظپ ظ‡ط°ط§ ط§ظ„طµظ†ظپطں")) return;
+    setBusy(true);
+    const { error } = await supabase.from("products").delete().eq("id", id);
+    setNotice(error ? `طھط¹ط°ظ‘ط± ط§ظ„ط­ط°ظپ: ${error.message}` : "طھظ… ط­ط°ظپ ط§ظ„طµظ†ظپ.");
+    await loadData(); setBusy(false);
+  }
+
+  async function saveCategory(e: React.FormEvent) {
+    e.preventDefault();
+    if (!supabase || !categoryName.trim()) return;
+    setBusy(true);
+    const { error } = await supabase.from("categories").insert({ name: categoryName.trim(), sort_order: categories.length + 1, is_active: true });
+    setNotice(error ? `طھط¹ط°ظ‘ط± ط¥ط¶ط§ظپط© ط§ظ„ظ‚ط³ظ…: ${error.message}` : "طھظ…طھ ط¥ط¶ط§ظپط© ط§ظ„ظ‚ط³ظ….");
+    setCategoryName(""); setShowCategoryForm(false); await loadData(); setBusy(false);
+  }
+
+  async function uploadImage(file?: File) {
+    if (!supabase || !file) return;
+    const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
+    const path = `${crypto.randomUUID()}.${extension}`;
+    setBusy(true); setNotice("");
+    const { error } = await supabase.storage.from("menu-images").upload(path, file, { upsert: false, contentType: file.type });
+    if (error) setNotice(`طھط¹ط°ظ‘ط± ط±ظپط¹ ط§ظ„طµظˆط±ط©: ${error.message}. طھط£ظƒط¯ ظ…ظ† ط¥ظ†ط´ط§ط، bucket ط¨ط§ط³ظ… menu-images ظˆط¥ط¶ط§ظپط© ط³ظٹط§ط³ط§طھ ط§ظ„طھط®ط²ظٹظ†.`);
+    else {
+      const { data } = supabase.storage.from("menu-images").getPublicUrl(path);
+      setForm(old => old ? { ...old, image_url: data.publicUrl } : old);
+      setNotice("طھظ… ط±ظپط¹ ط§ظ„طµظˆط±ط©.");
+    }
+    setBusy(false);
+  }
+
+  if (loading) return <main className="admin-page"><p>ط¹ظ… ظ†ط¬ظ‡ظ‘ط² ظ„ظˆط­ط© ط§ظ„ط¥ط¯ط§ط±ط©...</p></main>;
+  if (!supabase) return <main className="admin-page"><div className="admin-login"><Coffee size={35}/><h1>ط¥ط¹ط¯ط§ط¯ ظ„ظˆط­ط© Soul Cafأ©</h1><p>ط£ط¶ظپ ط¨ظٹط§ظ†ط§طھ Supabase ط¥ظ„ظ‰ ظ…ظ„ظپ <code>.env.local</code> ط«ظ… ط£ط¹ط¯ طھط´ط؛ظٹظ„ ط§ظ„ظ…ط´ط±ظˆط¹. ط±ط§ط¬ط¹ README ظˆظ…ظ„ظپ schema.sql ظ„ط¥ط¹ط¯ط§ط¯ ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ ظˆط§ظ„طµظ„ط§ط­ظٹط§طھ.</p><a className="admin-back" href="/">ط§ظ„ط¹ظˆط¯ط© ظ„ظ„ظ…ظ†ظٹظˆ</a></div></main>;
+
+  if (!signedIn) return <main className="admin-page"><form className="admin-login" onSubmit={login}>
+    <Coffee size={35}/><span className="section-kicker">SOUL CAFأ‰</span><h1>ظ„ظˆط­ط© ط§ظ„ط¥ط¯ط§ط±ط©</h1><p>ط³ط¬ظ‘ظ„ ط§ظ„ط¯ط®ظˆظ„ ط¨ط­ط³ط§ط¨ ط§ظ„ظ…ط§ظ„ظƒ ط§ظ„ط°ظٹ ط£ظڈظ†ط´ط¦ ظپظٹ Supabase.</p>
+    <label>ط§ظ„ط¨ط±ظٹط¯ ط§ظ„ط¥ظ„ظƒطھط±ظˆظ†ظٹ<input type="email" required value={email} onChange={e => setEmail(e.target.value)} autoComplete="username"/></label>
+    <label>ظƒظ„ظ…ط© ط§ظ„ظ…ط±ظˆط±<input type="password" required value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password"/></label>
+    {notice && <p className="admin-notice">{notice}</p>}<button className="checkout-btn" disabled={busy}>{busy ? "ط¬ط§ط±ظچ ط§ظ„ط¯ط®ظˆظ„..." : "طھط³ط¬ظٹظ„ ط§ظ„ط¯ط®ظˆظ„"}</button><a className="admin-back" href="/">ط§ظ„ط¹ظˆط¯ط© ظ„ظ„ظ…ظ†ظٹظˆ</a>
+  </form></main>;
+
+  return <main className="admin-page">
+    <header className="admin-header"><a className="brand admin-brand" href="/"><span className="brand-mark"><Coffee size={22}/></span><span><b>SOUL</b><small>ADMIN</small></span></a><div className="admin-header-actions"><button onClick={() => void loadData()} disabled={busy}><RefreshCw size={16}/> طھط­ط¯ظٹط«</button><button onClick={logout}><LogOut size={16}/> ط®ط±ظˆط¬</button></div></header>
+    <section className="admin-content">
+      <div className="admin-title"><div><span className="section-kicker">CONTROL PANEL</span><h1>ط¥ط¯ط§ط±ط© ط§ظ„ظ…ظ†ظٹظˆ</h1><p>ط¹ط¯ظ‘ظ„ ط§ظ„ط£طµظ†ط§ظپ ظˆط§ظ„ط£ط³ط¹ط§ط± ظˆط§ظ„ط£ظ‚ط³ط§ظ…. ط§ظ„طھط؛ظٹظٹط±ط§طھ طھظڈط­ظپط¸ ظپظٹ ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.</p></div><button className="admin-primary" onClick={() => setForm(blankForm(categories[0]?.id || ""))}><Plus size={17}/> ط¥ط¶ط§ظپط© طµظ†ظپ</button></div>
+      {notice && <div className="admin-notice">{notice}</div>}
+      <div className="admin-stats"><div><span>ط§ظ„ط£طµظ†ط§ظپ</span><b>{products.length}</b></div><div><span>ط§ظ„ظ…طھظˆظپط±ط©</span><b>{products.filter(p => p.available).length}</b></div><div><span>ط§ظ„ط£ظ‚ط³ط§ظ…</span><b>{categories.length}</b></div></div>
+      <div className="admin-section-heading"><h2>ط§ظ„ط£طµظ†ط§ظپ</h2><button onClick={() => setShowCategoryForm(v => !v)}><Plus size={15}/> ط¥ط¶ط§ظپط© ظ‚ط³ظ…</button></div>
+      {showCategoryForm && <form className="category-add" onSubmit={saveCategory}><input value={categoryName} onChange={e => setCategoryName(e.target.value)} placeholder="ط§ط³ظ… ط§ظ„ظ‚ط³ظ… ط§ظ„ط¬ط¯ظٹط¯" required/><button disabled={busy}>ط­ظپط¸ ط§ظ„ظ‚ط³ظ…</button><button type="button" onClick={() => setShowCategoryForm(false)}>ط¥ظ„ط؛ط§ط،</button></form>}
+      {form && <form className="product-editor" onSubmit={saveProduct}>
+        <div className="editor-heading"><h2>{form.id ? "طھط¹ط¯ظٹظ„ طµظ†ظپ" : "ط¥ط¶ط§ظپط© طµظ†ظپ ط¬ط¯ظٹط¯"}</h2><button type="button" className="icon-button" onClick={() => setForm(null)}><X/></button></div>
+        <div className="editor-grid">
+          <label>ط§ط³ظ… ط§ظ„طµظ†ظپ<input required value={form.name} onChange={e => setForm({...form,name:e.target.value})}/></label>
+          <label>ط§ظ„ط³ط¹ط±<input required type="number" min="0" step="any" value={form.price} onChange={e => setForm({...form,price:e.target.value})}/></label>
+          <label>ط§ظ„ظ‚ط³ظ…<select required value={form.category_id} onChange={e => setForm({...form,category_id:e.target.value})}><option value="">ط§ط®طھط± ط§ظ„ظ‚ط³ظ…</option>{categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+          <label>طھط±طھظٹط¨ ط§ظ„ط¹ط±ط¶<input type="number" value={form.sort_order} onChange={e => setForm({...form,sort_order:e.target.value})}/></label>
+          <label className="full-field">ط§ظ„ظˆطµظپ<textarea rows={2} value={form.description} onChange={e => setForm({...form,description:e.target.value})}/></label>
+          <label className="full-field">ط±ط§ط¨ط· ط§ظ„طµظˆط±ط©<input value={form.image_url} onChange={e => setForm({...form,image_url:e.target.value})} placeholder="https://..."/></label>
+          <label className="upload-control"><ImagePlus size={17}/> ط£ظˆ ط§ط±ظپط¹ طµظˆط±ط©<input type="file" accept="image/*" onChange={e => void uploadImage(e.target.files?.[0])}/></label>
+          <label className="check-label"><input type="checkbox" checked={form.available} onChange={e => setForm({...form,available:e.target.checked})}/> ظ…طھظˆظپط± ظپظٹ ط§ظ„ظ…ظ†ظٹظˆ</label>
+          <label className="check-label"><input type="checkbox" checked={form.featured} onChange={e => setForm({...form,featured:e.target.checked})}/> طµظ†ظپ ظ…ظ…ظٹظ‘ط²</label>
+        </div>
+        {form.image_url && <img className="image-preview" src={form.image_url} alt="ظ…ط¹ط§ظٹظ†ط© طµظˆط±ط© ط§ظ„طµظ†ظپ"/>}
+        <div className="editor-actions"><button className="admin-primary" disabled={busy}><Save size={16}/> ط­ظپط¸</button><button type="button" onClick={() => setForm(null)}>ط¥ظ„ط؛ط§ط،</button></div>
+      </form>}
+      <div className="admin-products">{products.map(p => <article className="admin-product" key={p.id}><img src={p.image_url || "https://placehold.co/100x100?text=Soul"} alt=""/><div className="admin-product-info"><b>{p.name}</b><span>{categories.find(c => c.id === p.category_id)?.name || "ط¨ط¯ظˆظ† ظ‚ط³ظ…"}</span><strong>{formatPrice(Number(p.price))}</strong></div><span className={p.available ? "status-on" : "status-off"}>{p.available ? "ظ…طھظˆظپط±" : "ظ…ط®ظپظٹ"}</span><button className="admin-icon" onClick={() => setForm({...p, price:String(p.price), sort_order:String((p as Product & {sort_order?:number}).sort_order || 0)})} aria-label="طھط¹ط¯ظٹظ„"><Pencil size={17}/></button><button className="admin-icon danger" onClick={() => void deleteProduct(p.id)} aria-label="ط­ط°ظپ"><Trash2 size={17}/></button></article>)}</div>
+      <a className="admin-back" href="/">ط¹ط±ط¶ ط§ظ„ظ…ظ†ظٹظˆ ط§ظ„ط¹ط§ظ… â†—</a>
+    </section>
+  </main>;
+}
+
+
