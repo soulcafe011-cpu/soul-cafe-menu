@@ -65,9 +65,59 @@ export default function Home() {
 
   const visibleProducts = useMemo(() => products.filter(p =>
     p.available &&
-    (activeCategory === "all" || p.category_id === activeCategory) &&
     `${p.name} ${p.description}`.toLowerCase().includes(search.toLowerCase())
-  ), [activeCategory, search, products]);
+  ), [search, products]);
+
+  const groupedProducts = useMemo(() =>
+    categories.map(category => ({
+      ...category,
+      products: visibleProducts.filter(product => product.category_id === category.id)
+    })).filter(category => category.products.length > 0),
+  [categories, visibleProducts]);
+
+  useEffect(() => {
+    const sections = document.querySelectorAll<HTMLElement>(".menu-category-section");
+    if (!sections.length) return;
+
+    const observer = new IntersectionObserver(entries => {
+      const visible = entries
+        .filter(entry => entry.isIntersecting)
+        .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+
+      if (visible.length) {
+        setActiveCategory(visible[0].target.getAttribute("data-category-id") || "all");
+      }
+    }, {
+      root: null,
+      rootMargin: "-125px 0px -65% 0px",
+      threshold: 0
+    });
+
+    sections.forEach(section => observer.observe(section));
+    return () => observer.disconnect();
+  }, [groupedProducts]);
+
+  useEffect(() => {
+    const tabs = document.querySelector(".category-tabs");
+    const activeTab = tabs?.querySelector<HTMLElement>(
+      `[data-category-id="${activeCategory}"]`
+    );
+    activeTab?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }, [activeCategory]);
+
+  function goToCategory(id: string) {
+    if (id === "all") {
+      setActiveCategory("all");
+      document.getElementById("menu")?.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
+
+    setActiveCategory(id);
+    document.getElementById(`category-${id}`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start"
+    });
+  }
 
   const cartItems = Object.values(cart);
   const count = cartItems.reduce((sum, item) => sum + item.quantity, 0);
@@ -133,14 +183,24 @@ export default function Home() {
         </div>
         <div className="search-box"><Search size={18}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="دوّر على مشروبك المفضل..." aria-label="ابحث في المنيو"/>{search && <button onClick={() => setSearch("")} aria-label="مسح البحث"><X size={16}/></button>}</div>
         <div className="category-tabs">
-          <button className={activeCategory === "all" ? "active" : ""} onClick={() => setActiveCategory("all")}><MenuIcon size={15}/> كل المنيو</button>
-          {categories.map(category => <button key={category.id} className={activeCategory === category.id ? "active" : ""} onClick={() => setActiveCategory(category.id)}>{category.name}</button>)}
+          <button data-category-id="all" className={activeCategory === "all" ? "active" : ""} onClick={() => goToCategory("all")}><MenuIcon size={15}/> كل المنيو</button>
+          {categories.map(category => <button data-category-id={category.id} key={category.id} className={activeCategory === category.id ? "active" : ""} onClick={() => goToCategory(category.id)}>{category.name}</button>)}
         </div>
-        <div className="product-grid">
-          {visibleProducts.map(product => <article className="product-card" key={product.id}>
-            <div className="product-image"><img src={product.image_url} alt={product.name}/>{product.featured && <span className="popular">مفضّل</span>}<button className="quick-add" onClick={() => add(product)} aria-label={`أضف ${product.name}`}><Plus size={19}/></button></div>
-            <div className="product-info"><div className="product-title-row"><h3>{product.name}</h3><strong>{formatPrice(product.price)}</strong></div><p>{product.description}</p><button className="add-link" onClick={() => add(product)}>أضف للسلة <Plus size={14}/></button></div>
-          </article>)}
+        <div className="menu-category-list">
+          {groupedProducts.map(category => <section
+            className="menu-category-section"
+            id={`category-${category.id}`}
+            data-category-id={category.id}
+            key={category.id}
+          >
+            <h3 className="menu-category-title">{category.name}</h3>
+            <div className="product-grid">
+              {category.products.map(product => <article className="product-card" key={product.id}>
+                <div className="product-image"><img src={product.image_url} alt={product.name}/>{product.featured && <span className="popular">مفضّل</span>}<button className="quick-add" onClick={() => add(product)} aria-label={`أضف ${product.name}`}><Plus size={19}/></button></div>
+                <div className="product-info"><div className="product-title-row"><h3>{product.name}</h3><strong>{formatPrice(product.price)}</strong></div><p>{product.description}</p><button className="add-link" onClick={() => add(product)}>أضف للسلة <Plus size={14}/></button></div>
+              </article>)}
+            </div>
+          </section>)}
         </div>
         {visibleProducts.length === 0 && <div className="empty-state">ما لقينا أصناف مطابقة. جرّب بحث أو قسم تاني.</div>}
       </section>
