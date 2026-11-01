@@ -8,6 +8,22 @@ import { demoCategories, demoProducts, formatPrice, type Category, type Product 
 
 type CartItem = { product: Product; quantity: number };
 
+
+function getMenuImagePath(value: string | null | undefined): string {
+  if (!value) return "";
+  if (!value.startsWith("http")) return value;
+
+  try {
+    const pathname = new URL(value).pathname;
+    const match = pathname.match(
+      /\/storage\/v1\/object\/(?:sign|public|authenticated)\/menu-images\/(.+)$/
+    );
+    return match ? decodeURIComponent(match[1]) : value;
+  } catch {
+    return value;
+  }
+}
+
 export default function Home() {
   const [activeCategory, setActiveCategory] = useState("all");
   const [categories, setCategories] = useState<Category[]>(demoCategories);
@@ -29,7 +45,19 @@ export default function Home() {
       ]);
       if (!active) return;
       if (!cats.error && cats.data?.length) setCategories(cats.data as Category[]);
-      if (!prods.error && prods.data?.length) setProducts(prods.data as Product[]);
+      if (!prods.error && prods.data?.length) {
+          const productsWithFreshUrls = await Promise.all(
+            (prods.data as Product[]).map(async (product) => {
+              const imagePath = getMenuImagePath(product.image_url);
+              if (!imagePath) return product;
+              const { data } = await supabase!.storage
+                .from("menu-images")
+                .createSignedUrl(imagePath, 60 * 60);
+              return { ...product, image_url: data?.signedUrl || product.image_url };
+            })
+          );
+          if (active) setProducts(productsWithFreshUrls);
+        }
     }
     void fetchMenu();
     return () => { active = false; };
