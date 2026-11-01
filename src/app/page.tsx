@@ -26,8 +26,8 @@ function getMenuImagePath(value: string | null | undefined): string {
 
 export default function Home() {
   const [activeCategory, setActiveCategory] = useState("all");
-  const [categories, setCategories] = useState<Category[]>(demoCategories);
-  const [products, setProducts] = useState<Product[]>(demoProducts);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<Record<string, CartItem>>({});
   const [cartOpen, setCartOpen] = useState(false);
